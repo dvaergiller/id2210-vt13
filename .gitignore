@@ -5,3 +5,10 @@
 *.war
 *.ear
 target/*
+
+# Eclipse generated files #
+.classpath
+.project
+.settings
+.metadata
+
