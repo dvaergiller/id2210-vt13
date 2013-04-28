@@ -7,3 +7,9 @@
 target/*
 /tman/target/
 /search/target/
+
+# Eclipse generated files #
+.classpath
+.project
+.settings
+.metadata
