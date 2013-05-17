@@ -17,6 +17,12 @@ public class PartitionRange {
         this.partitionMask = partitionMask;
     }
 
+    public PartitionRange(String partitionString) {
+        String input[] = partitionString.split("/");
+        this.partitionNum = Integer.parseInt(input[0]);
+        this.partitionMask = partitionMaskFromWidth(Integer.parseInt(input[1]));
+    }
+    
     public int getPartitionNum() {
         return partitionNum;
     }

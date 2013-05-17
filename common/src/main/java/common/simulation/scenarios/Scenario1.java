@@ -7,7 +7,7 @@ public class Scenario1 extends Scenario {
 	private static SimulationScenario scenario = new SimulationScenario() {{
 		StochasticProcess process1 = new StochasticProcess() {{
 			eventInterArrivalTime(constant(100));
-			raise(2, Operations.peerJoin(5), 
+			raise(20, Operations.peerJoin(5), 
                                 uniform(0, Integer.MAX_VALUE)
                              );
 		}};

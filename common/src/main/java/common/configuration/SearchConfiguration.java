@@ -7,24 +7,29 @@ import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
 import java.util.Properties;
+import search.system.peer.partition.PartitionRange;
 
 public final class SearchConfiguration {
 
     private final long period;
     private final int numPartitions;
+    private final PartitionRange partitionRange;
     private final int maxNumRoutingEntries;
     private final long seed;
 
     public SearchConfiguration(long seed) {
         this.period = 2*1000;
-        this.numPartitions = 10;
+        this.numPartitions = 65536;
+        this.partitionRange = new PartitionRange("" + (seed%this.numPartitions) + "/2");
         this.maxNumRoutingEntries = 20;
         this.seed = seed;
     }
     
-    public SearchConfiguration(long period, int numPartitions, int maxNumRoutingEntries, long seed) {
+    public SearchConfiguration(long period, int numPartitions, PartitionRange range,
+            int maxNumRoutingEntries, long seed) {
         this.period = period;
         this.numPartitions = numPartitions;
+        this.partitionRange = range;
         this.maxNumRoutingEntries = maxNumRoutingEntries;
         this.seed = seed;
     }
@@ -37,6 +42,10 @@ public final class SearchConfiguration {
         return numPartitions;
     }
 
+    public PartitionRange getPartitionRange() {
+        return partitionRange;
+    }
+    
     public int getMaxNumRoutingEntries() {
         return maxNumRoutingEntries;
     }
@@ -49,6 +58,7 @@ public final class SearchConfiguration {
         Properties p = new Properties();
         p.setProperty("period", "" + period);
         p.setProperty("numPartitions", "" + numPartitions);
+        p.setProperty("partitionRange", this.partitionRange.toString());
         p.setProperty("maxNumRoutingEntries", "" + maxNumRoutingEntries);
         p.setProperty("seed", "" + seed);
 
@@ -63,9 +73,10 @@ public final class SearchConfiguration {
 
         long period = Long.parseLong(p.getProperty("period"));
         int numPartitions = Integer.parseInt(p.getProperty("numPartitions"));
+        PartitionRange range = new PartitionRange(p.getProperty("partitionRange"));
         int maxNumRoutingEntries = Integer.parseInt(p.getProperty("maxNumRoutingEntries"));
         long seed = Long.parseLong(p.getProperty("seed"));
 
-        return new SearchConfiguration(period, numPartitions, maxNumRoutingEntries, seed);
+        return new SearchConfiguration(period, numPartitions, range, maxNumRoutingEntries, seed);
     }
 }
