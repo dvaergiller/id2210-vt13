@@ -28,7 +28,7 @@ import common.peer.PeerAddress;
 import cyclon.system.peer.cyclon.*;
 import se.sics.kompics.web.Web;
 import tman.system.peer.tman.TMan;
-import tman.system.peer.tman.TManSamplePort;
+import tman.system.peer.tman.TManPort;
 
 
 public final class SearchPeer extends ComponentDefinition {
@@ -65,8 +65,8 @@ public final class SearchPeer extends ComponentDefinition {
                         search.getNegative(CyclonSamplePort.class));
 		connect(cyclon.getPositive(CyclonSamplePort.class), 
                         tman.getNegative(CyclonSamplePort.class));
-		connect(tman.getPositive(TManSamplePort.class), 
-                        search.getNegative(TManSamplePort.class));
+		connect(tman.getPositive(TManPort.class), 
+                        search.getNegative(TManPort.class));
 
                 connect(indexPort, search.getNegative(IndexPort.class));
 		
