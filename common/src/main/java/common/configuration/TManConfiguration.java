@@ -12,13 +12,20 @@ public final class TManConfiguration {
     private final long period;
     private final long seed;
     private final double temperature;
-
+    private final int viewSize;
+    private final int exchangeMsgSize;
+    private final int msgTimeout;
+    
 //-------------------------------------------------------------------
-    public TManConfiguration(long seed, long period, double temperature) {
+    public TManConfiguration(long seed, long period, double temperature, 
+            int viewSize, int exchangeMsgSize, int msgTimeout) {
         super();
         this.seed = seed;
         this.period = period;
         this.temperature = temperature;
+        this.viewSize = viewSize;
+        this.exchangeMsgSize = exchangeMsgSize;
+        this.msgTimeout = msgTimeout;
     }
 
     public long getSeed() {
@@ -34,6 +41,18 @@ public final class TManConfiguration {
     public double getTemperature() {
         return temperature;
     }
+
+    public int getViewSize() {
+        return viewSize;
+    }
+
+    public int getExchangeMsgSize() {
+        return exchangeMsgSize;
+    }
+
+    public int getMsgTimeout() {
+        return msgTimeout;
+    }
     
 //-------------------------------------------------------------------
     public void store(String file) throws IOException {
@@ -41,7 +60,10 @@ public final class TManConfiguration {
         p.setProperty("seed", "" + seed);
         p.setProperty("period", "" + period);
         p.setProperty("temperature", "" + temperature);
-
+        p.setProperty("viewSize", "" + viewSize);
+        p.setProperty("exchangeMsgSize", "" + exchangeMsgSize);
+        p.setProperty("msgTimeout", "" + msgTimeout);
+        
         Writer writer = new FileWriter(file);
         p.store(writer, "se.sics.kompics.p2p.overlay.application");
     }
@@ -55,7 +77,11 @@ public final class TManConfiguration {
         long seed = Long.parseLong(p.getProperty("seed"));
         long period = Long.parseLong(p.getProperty("period"));
         double temp = Double.parseDouble(p.getProperty("temperature"));
-
-        return new TManConfiguration(seed, period, temp);
+        int viewSize = Integer.parseInt(p.getProperty("viewSize"));
+        int exchangeMsgSize = Integer.parseInt(p.getProperty("exchangeMsgSize"));
+        int msgTimeout = Integer.parseInt(p.getProperty("msgTimeout"));
+        
+        return new TManConfiguration(seed, period, temp, viewSize, 
+                exchangeMsgSize, msgTimeout);
     }
 }
