@@ -15,10 +15,11 @@ public final class TManConfiguration {
     private final int viewSize;
     private final int exchangeMsgSize;
     private final int msgTimeout;
+    private final int numPartitions;
     
 //-------------------------------------------------------------------
     public TManConfiguration(long seed, long period, double temperature, 
-            int viewSize, int exchangeMsgSize, int msgTimeout) {
+            int viewSize, int exchangeMsgSize, int msgTimeout, int numPartitions) {
         super();
         this.seed = seed;
         this.period = period;
@@ -26,6 +27,8 @@ public final class TManConfiguration {
         this.viewSize = viewSize;
         this.exchangeMsgSize = exchangeMsgSize;
         this.msgTimeout = msgTimeout;
+        this.numPartitions = numPartitions;
+        
     }
 
     public long getSeed() {
@@ -53,6 +56,10 @@ public final class TManConfiguration {
     public int getMsgTimeout() {
         return msgTimeout;
     }
+
+    public int getNumPartitions() {
+        return numPartitions;
+    }
     
 //-------------------------------------------------------------------
     public void store(String file) throws IOException {
@@ -63,6 +70,7 @@ public final class TManConfiguration {
         p.setProperty("viewSize", "" + viewSize);
         p.setProperty("exchangeMsgSize", "" + exchangeMsgSize);
         p.setProperty("msgTimeout", "" + msgTimeout);
+        p.setProperty("numPartitions", "" + numPartitions);
         
         Writer writer = new FileWriter(file);
         p.store(writer, "se.sics.kompics.p2p.overlay.application");
@@ -80,8 +88,9 @@ public final class TManConfiguration {
         int viewSize = Integer.parseInt(p.getProperty("viewSize"));
         int exchangeMsgSize = Integer.parseInt(p.getProperty("exchangeMsgSize"));
         int msgTimeout = Integer.parseInt(p.getProperty("msgTimeout"));
+        int numPartitions = Integer.parseInt(p.getProperty("numPartitions"));
         
         return new TManConfiguration(seed, period, temp, viewSize, 
-                exchangeMsgSize, msgTimeout);
+                exchangeMsgSize, msgTimeout, numPartitions);
     }
 }
