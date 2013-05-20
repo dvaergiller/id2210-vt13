@@ -6,8 +6,11 @@ import java.util.ArrayList;
 import cyclon.system.peer.cyclon.CyclonSample;
 import cyclon.system.peer.cyclon.CyclonSamplePort;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,6 +20,7 @@ import se.sics.kompics.Negative;
 import se.sics.kompics.Positive;
 import se.sics.kompics.address.Address;
 import se.sics.kompics.network.Network;
+import se.sics.kompics.timer.CancelTimeout;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
 import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timeout;
@@ -27,7 +31,7 @@ import tman.simulator.snapshot.Snapshot;
 public final class TMan extends ComponentDefinition {
     private static final Logger logger = LoggerFactory.getLogger(TMan.class);
 
-    Negative<TManSamplePort> tmanPort = negative(TManSamplePort.class);
+    Negative<TManPort> tmanPort = negative(TManPort.class);
     Positive<CyclonSamplePort> cyclonSamplePort = positive(CyclonSamplePort.class);
     Positive<Network> networkPort = positive(Network.class);
     Positive<Timer> timerPort = positive(Timer.class);
@@ -37,6 +41,8 @@ public final class TMan extends ComponentDefinition {
     private TManConfiguration tmanConfiguration;
     private Random r;
 
+    private HashMap<Address, UUID> pendingExchangeRequests = new HashMap<Address, UUID>();
+    
     public class TManSchedule extends Timeout {
 
         public TManSchedule(SchedulePeriodicTimeout request) {
@@ -51,6 +57,7 @@ public final class TMan extends ComponentDefinition {
     public TMan() {
         tmanPartners = new ArrayList<Address>();
 
+        subscribe(handleTManEvict, tmanPort);
         subscribe(handleInit, control);
         subscribe(handleRound, timerPort);
         subscribe(handleCyclonSample, cyclonSamplePort);
@@ -75,26 +82,75 @@ public final class TMan extends ComponentDefinition {
     Handler<TManSchedule> handleRound = new Handler<TManSchedule>() {
         @Override
         public void handle(TManSchedule event) {
-            Snapshot.updateTManPartners(self, tmanPartners);
-
-            // Publish sample to connected components
-            trigger(new TManSample(tmanPartners), tmanPort);            
+            
+            if(tmanPartners.isEmpty()) {
+                return;
+            }
+            
+            // Select partner to exchange peers with.
+            Address selected = getSoftMaxAddress(tmanPartners);
+            
+            // Prepare buffer to send to selected partner.
+            ArrayList<Address> buf = new ArrayList<Address>(tmanPartners);
+          
+            if(buf.size() >= tmanConfiguration.getExchangeMsgSize()) {
+                Collections.sort(buf, new ComparatorById(self));
+                buf.subList(tmanConfiguration.getExchangeMsgSize()-1, buf.size()).clear();
+            }
+            buf.add(self);
+            
+            // Send request to partner.
+            UUID id = event.getTimeoutId();
+            ExchangeMsg.Request request = new ExchangeMsg.Request(id, buf, self, selected);
+            trigger(request, networkPort);
+            
+            // Schedule timeout.
+            ScheduleTimeout rst = new ScheduleTimeout(tmanConfiguration.getMsgTimeout());
+            rst.setTimeoutEvent(new ExchangeMsg.RequestTimeout(rst, selected));
+            pendingExchangeRequests.put(selected, rst.getTimeoutEvent().getTimeoutId());
+            trigger(rst, timerPort);
         }
     };
 //-------------------------------------------------------------------	
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
         @Override
         public void handle(CyclonSample event) {
-            List<Address> cyclonPartners = event.getSample();
-
             // merge cyclonPartners into TManPartners
+            ArrayList<Address> filteredSample = new ArrayList<Address>();
+            for(Address a : event.getSample()) {
+                if(a.getId() % tmanConfiguration.getNumPartitions() == 
+                        self.getId() % tmanConfiguration.getNumPartitions()) {
+                    filteredSample.add(a);
+                }
+            }
+            
+            updateView(filteredSample);
         }
     };
 //-------------------------------------------------------------------	
     Handler<ExchangeMsg.Request> handleTManPartnersRequest = new Handler<ExchangeMsg.Request>() {
         @Override
         public void handle(ExchangeMsg.Request event) {
-
+            // Prepare buffer to send to partner.
+            ArrayList<Address> buf = new ArrayList<Address>(tmanPartners);
+            buf.add(self);
+            Collections.sort(buf, new ComparatorById(self));
+            
+            if(buf.size() > tmanConfiguration.getExchangeMsgSize()) {
+                buf.subList(tmanConfiguration.getExchangeMsgSize(), buf.size()).clear();
+            }
+            
+            // Send selected buffer to partner.
+            UUID id = event.getRequestId();
+            ExchangeMsg.Response response = new ExchangeMsg.Response(id, buf, self, event.getSource());
+            trigger(response, networkPort);
+            
+            // Update own partners with received peers.
+            updateView(event.getSelectedBuffer());
+            
+            // Publish sample to connected components
+            //trigger(new TManSample(tmanPartners), tmanPort); 
+            //Snapshot.updateTManPartners(self, tmanPartners);
         }
     };
     
@@ -102,9 +158,64 @@ public final class TMan extends ComponentDefinition {
         @Override
         public void handle(ExchangeMsg.Response event) {
 
+            // Cancel timeout for response.
+            if(pendingExchangeRequests.containsKey(event.getSource())) {
+                UUID timeoutId = pendingExchangeRequests.get(event.getSource());
+                CancelTimeout ct = new CancelTimeout(timeoutId);
+                trigger(ct, timerPort);
+                pendingExchangeRequests.remove(event.getSource());
+            }
+
+            // Update own partners with received peers.
+            updateView(event.getSelectedBuffer());
+            
+            // Publish sample to connected components
+            trigger(new TManSample(tmanPartners), tmanPort); 
+            Snapshot.updateTManPartners(self, tmanPartners);
+        }
+    };
+    
+    Handler<ExchangeMsg.RequestTimeout> handleTManPartnersTimeout = new Handler<ExchangeMsg.RequestTimeout>() {
+        @Override
+        public void handle(ExchangeMsg.RequestTimeout event) {
+            if(pendingExchangeRequests.containsKey(event.getPeer())) {
+                pendingExchangeRequests.remove(event.getPeer());
+                evict(event.getPeer());
+            }
         }
     };
 
+    Handler<TManEvict> handleTManEvict = new Handler<TManEvict>() {
+        @Override
+        public void handle(TManEvict event) {
+            evict(event.getPeer());
+        }
+    };
+    
+    /**
+     * Merges a buffer into the view and selects the new view based on
+     * ComparatorById.
+     * @param buf
+     */
+    private void updateView(List<Address> buf) {
+        ArrayList<Address> merged = merge(tmanPartners, buf);
+        Collections.sort(merged, new ComparatorById(self));
+        
+        // Remove all nodes with index >= view size.
+        if(merged.size() > tmanConfiguration.getViewSize()) {
+            merged.subList(tmanConfiguration.getViewSize(), merged.size()).clear();
+        }
+        tmanPartners = merged;
+    }
+    
+    private ArrayList<Address> merge(List<Address> first, List<Address> second) {
+        HashSet<Address> merged = new HashSet<Address>();
+        merged.addAll(first);
+        merged.addAll(second);
+        merged.remove(self);
+        return new ArrayList<Address>(merged);
+    }
+    
         // TODO - if you call this method with a list of entries, it will
     // return a single node, weighted towards the 'best' node (as defined by
     // ComparatorById) with the temperature controlling the weighting.
@@ -113,7 +224,7 @@ public final class TMan extends ComponentDefinition {
     // A temperature of '0.0' will throw a divide by zero exception :)
     // Reference:
     // http://webdocs.cs.ualberta.ca/~sutton/book/2/node4.html
-    public Address getSoftMaxAddress(List<Address> entries) {
+    private Address getSoftMaxAddress(List<Address> entries) {
         Collections.sort(entries, new ComparatorById(self));
 
         double rnd = r.nextDouble();
@@ -139,6 +250,11 @@ public final class TMan extends ComponentDefinition {
             }
         }
         return entries.get(entries.size() - 1);
-    }    
+    } 
+    
+    private void evict(Address peer) {
+        tmanPartners.remove(peer);
+        trigger(new TManSample(tmanPartners), tmanPort);
+    }
     
 }

@@ -28,7 +28,6 @@ public class Snapshot {
 //-------------------------------------------------------------------
 	public static void updateTManPartners(Address address, ArrayList<Address> partners) {
 		PeerInfo peerInfo = peers.get(address);
-		
 		if (peerInfo == null)
 			return;
 		
@@ -71,18 +70,19 @@ public class Snapshot {
 	
 //-------------------------------------------------------------------
 	private static String reportDetails() {
+            
 		PeerInfo peerInfo;
 		String str = new String("---\n");
 
 		for (Address peer : peers.keySet()) {
 			peerInfo = peers.get(peer);
 		
-			str += "peer: " + peer;
-			str += ", cyclon parters: " + peerInfo.getCyclonPartners();
-			str += ", tman parters: " + peerInfo.getTManPartners();
+			str += "peer: " + peer.getId();
+			//str += ", cyclon parters: " + peerInfo.getCyclonPartners();
+			str += ", tman partners: " + peerInfo.getTManPartners();
 			str += "\n";
 		}
-		
+            
 		return str;
 	}
 	
