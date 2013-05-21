@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.TreeSet;
 import java.util.logging.Level;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
@@ -54,7 +55,7 @@ import search.simulator.snapshot.Snapshot;
 import search.system.peer.AddIndexText;
 import search.system.peer.IndexPort;
 import tman.system.peer.tman.TManSample;
-import tman.system.peer.tman.TManSamplePort;
+import tman.system.peer.tman.TManPort;
 
 /**
  * Should have some comments here.
@@ -69,7 +70,7 @@ public final class Search extends ComponentDefinition {
     Positive<Timer> timerPort = positive(Timer.class);
     Negative<Web> webPort = negative(Web.class);
     Positive<CyclonSamplePort> cyclonSamplePort = positive(CyclonSamplePort.class);
-    Positive<TManSamplePort> tmanPort = positive(TManSamplePort.class);
+    Positive<TManPort> tmanPort = positive(TManPort.class);
     ArrayList<Address> neighbours = new ArrayList<Address>();
     private Address self;
     private SearchConfiguration searchConfiguration;
@@ -80,6 +81,15 @@ public final class Search extends ComponentDefinition {
     int lastMissingIndexEntry = 0;
     int maxIndexEntry = 0;
     Random random;
+    
+    private ArrayList<Address> tmanPartners;
+    private int cyclesOnTop = 0;
+    private int requiredCyclesOnTop = 30;
+    
+    private TreeSet<Address> potentialLeaderSet;
+    private Address leader = null;
+    boolean leaderLookupRunning = false;
+    
     // When you partition the index you need to find new nodes
     // This is a routing table maintaining a list of pairs in each partition.
     private Map<Integer, List<PeerDescriptor>> routingTable;
@@ -104,6 +114,9 @@ public final class Search extends ComponentDefinition {
         subscribe(handleUpdateIndexTimeout, timerPort);
         subscribe(handleMissingIndexEntriesRequest, networkPort);
         subscribe(handleMissingIndexEntriesResponse, networkPort);
+        subscribe(handleLeaderLookupRequest, networkPort);
+        subscribe(handleLeaderLookupResponse, networkPort);
+        subscribe(handleLeaderLookupFound, networkPort);
         subscribe(handleTManSample, tmanPort);
     }
 //-------------------------------------------------------------------	
@@ -437,6 +450,60 @@ public final class Search extends ComponentDefinition {
             // TODO merge the missing index entries in your lucene index 
         }
     };
+    
+    /*
+     * Starts a new leader lookup if one is not already underway.
+     */
+    private synchronized void tryStartLeaderLookup() {
+        if(leaderLookupRunning == false) {
+           leaderLookupRunning = true;
+           potentialLeaderSet = new TreeSet<Address>(tmanPartners);
+           Address potentialLeader = potentialLeaderSet.first();
+           potentialLeaderSet.remove(potentialLeader);
+           LeaderLookup.Request msg = new LeaderLookup.Request(self, potentialLeader);
+        }
+    }
+    
+    Handler<LeaderLookup.Request> handleLeaderLookupRequest = new Handler<LeaderLookup.Request>() {
+        @Override
+        public void handle(LeaderLookup.Request event) {
+            if(isLeader()) {
+                LeaderLookup.Found msg = new LeaderLookup.Found(self, event.getSource());
+                trigger(msg, networkPort);
+            }
+            else {
+                ArrayList<Address> suggestions = new ArrayList<Address>();
+                suggestions.add(tmanPartners.get(0));
+                suggestions.add(tmanPartners.get(1));
+                suggestions.add(tmanPartners.get(2));
+                
+                LeaderLookup.Response msg;
+                msg = new LeaderLookup.Response(self, event.getDestination(), suggestions);
+                trigger(msg, networkPort);
+            }
+        }
+    };
+    
+    Handler<LeaderLookup.Response> handleLeaderLookupResponse = new Handler<LeaderLookup.Response>() {
+        @Override
+        public void handle(LeaderLookup.Response event) {
+            potentialLeaderSet.addAll(event.getSuggestions());
+            Address potentialLeader = potentialLeaderSet.first();
+            potentialLeaderSet.remove(potentialLeader);
+            
+            LeaderLookup.Request msg = new LeaderLookup.Request(self, potentialLeader);
+            trigger(msg, networkPort);
+        }
+    };
+    
+    Handler<LeaderLookup.Found> handleLeaderLookupFound = new Handler<LeaderLookup.Found>() {
+        @Override
+        public void handle(LeaderLookup.Found event) {
+            leader = event.getSource();
+            leaderLookupRunning = false;
+        }
+    };
+    
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
         @Override
         public void handle(CyclonSample event) {
@@ -480,12 +547,38 @@ public final class Search extends ComponentDefinition {
             }
         }
     };
+    
     Handler<TManSample> handleTManSample = new Handler<TManSample>() {
         @Override
         public void handle(TManSample event) {
+            
+            tmanPartners = event.getSample();
+            
+            if(tmanPartners.isEmpty()) {
+                return;
+            }
+            
+            Collections.sort(tmanPartners);
+
+            if(tmanPartners.get(0).getId() > self.getId()) {
+                cyclesOnTop++;
+                /*
+                if(isLeader()) {
+                    System.out.println("Node " + self.getId() + " is leader of " 
+                            + self.getId()%searchConfiguration.getNumPartitions());
+                } 
+                */
+            }
+            else {
+                cyclesOnTop = 0;
+            }
         }
     };
 
+    public boolean isLeader() {
+        return cyclesOnTop >= requiredCyclesOnTop;
+    }
+    
     private void updateIndexPointers(int id) {
         if (id == lastMissingIndexEntry + 1) {
             lastMissingIndexEntry++;
