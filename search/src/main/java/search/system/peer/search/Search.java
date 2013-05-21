@@ -9,10 +9,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.logging.Level;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
@@ -88,7 +90,8 @@ public final class Search extends ComponentDefinition {
     
     private TreeSet<Address> potentialLeaderSet;
     private Address leader = null;
-    boolean leaderLookupRunning = false;
+    private boolean leaderLookupRunning = false;
+    private HashSet<IndexEntry> pendingEntries = new HashSet<IndexEntry>();
     
     // When you partition the index you need to find new nodes
     // This is a routing table maintaining a list of pairs in each partition.
@@ -117,6 +120,7 @@ public final class Search extends ComponentDefinition {
         subscribe(handleLeaderLookupRequest, networkPort);
         subscribe(handleLeaderLookupResponse, networkPort);
         subscribe(handleLeaderLookupFound, networkPort);
+        subscribe(handleAddIndexEntryRequest, networkPort);
         subscribe(handleTManSample, tmanPort);
     }
 //-------------------------------------------------------------------	
@@ -461,6 +465,7 @@ public final class Search extends ComponentDefinition {
            Address potentialLeader = potentialLeaderSet.first();
            potentialLeaderSet.remove(potentialLeader);
            LeaderLookup.Request msg = new LeaderLookup.Request(self, potentialLeader);
+           trigger(msg, networkPort);
         }
     }
     
@@ -468,17 +473,19 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(LeaderLookup.Request event) {
             if(isLeader()) {
+                System.out.println("Node " + self.getId() + " claiming to be leader");
                 LeaderLookup.Found msg = new LeaderLookup.Found(self, event.getSource());
                 trigger(msg, networkPort);
             }
             else {
+                System.out.println("Node " + self.getId() + " is not leader. Sending suggestions");
                 ArrayList<Address> suggestions = new ArrayList<Address>();
                 suggestions.add(tmanPartners.get(0));
                 suggestions.add(tmanPartners.get(1));
                 suggestions.add(tmanPartners.get(2));
                 
                 LeaderLookup.Response msg;
-                msg = new LeaderLookup.Response(self, event.getDestination(), suggestions);
+                msg = new LeaderLookup.Response(self, event.getSource(), suggestions);
                 trigger(msg, networkPort);
             }
         }
@@ -501,6 +508,20 @@ public final class Search extends ComponentDefinition {
         public void handle(LeaderLookup.Found event) {
             leader = event.getSource();
             leaderLookupRunning = false;
+            
+            System.out.println("Node " + self.getId() + " found leader. Adding " + pendingEntries.size() + " entries");
+            for(IndexEntry entry : pendingEntries) {
+                UUID requestId = UUID.randomUUID();
+                AddIndexEntry.Request msg = new AddIndexEntry.Request(requestId, self, leader, entry);
+                trigger(msg, networkPort);
+            }
+        }
+    };
+
+    Handler<AddIndexEntry.Request> handleAddIndexEntryRequest = new Handler<AddIndexEntry.Request>() {
+        @Override
+        public void handle(AddIndexEntry.Request event) {
+            System.out.println("Node " + self.getId() + " received add request");
         }
     };
     
@@ -535,6 +556,12 @@ public final class Search extends ComponentDefinition {
     Handler<AddIndexText> handleAddIndexText = new Handler<AddIndexText>() {
         @Override
         public void handle(AddIndexText event) {
+            
+            pendingEntries.add(new IndexEntry(-1, event.getText()));
+            System.out.println("Node " + self.getId() + " looking up leader");
+            tryStartLeaderLookup();
+            
+            /*
             int id = LeaderEmulator.incIndexId();
             updateIndexPointers(id);
             logger.info(self.getId()
@@ -545,6 +572,7 @@ public final class Search extends ComponentDefinition {
                 java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
                 throw new IllegalArgumentException(ex.getMessage());
             }
+            */
         }
     };
     
@@ -562,12 +590,12 @@ public final class Search extends ComponentDefinition {
 
             if(tmanPartners.get(0).getId() > self.getId()) {
                 cyclesOnTop++;
-                /*
+                
                 if(isLeader()) {
                     System.out.println("Node " + self.getId() + " is leader of " 
                             + self.getId()%searchConfiguration.getNumPartitions());
                 } 
-                */
+                
             }
             else {
                 cyclesOnTop = 0;
