@@ -27,7 +27,10 @@ import common.configuration.CyclonConfiguration;
 import common.peer.PeerAddress;
 import cyclon.system.peer.cyclon.*;
 import se.sics.kompics.web.Web;
+import search.system.peer.publish.Publish;
+import search.system.peer.publish.PublishPort;
 import tman.system.peer.tman.TMan;
+import tman.system.peer.tman.TManInit;
 import tman.system.peer.tman.TManPort;
 
 
@@ -39,7 +42,7 @@ public final class SearchPeer extends ComponentDefinition {
 	Positive<Timer> timer = positive(Timer.class);
         Negative<Web> webPort = negative(Web.class);
 	
-        private Component cyclon, tman, search, bootstrap;
+        private Component cyclon, tman, search, bootstrap, publish;
 	private Address self;
 	private int bootstrapRequestPeerCount;
 	private boolean bootstrapped;
@@ -50,6 +53,7 @@ public final class SearchPeer extends ComponentDefinition {
 		cyclon = create(Cyclon.class);
 		tman = create(TMan.class);
 		search = create(Search.class);
+                publish = create(Publish.class);
 		bootstrap = create(BootstrapClient.class);
 
 		connect(network, search.getNegative(Network.class));
@@ -67,7 +71,11 @@ public final class SearchPeer extends ComponentDefinition {
                         tman.getNegative(CyclonSamplePort.class));
 		connect(tman.getPositive(TManPort.class), 
                         search.getNegative(TManPort.class));
-
+                connect(tman.getPositive(TManPort.class),
+                        publish.getNegative(TManPort.class));
+                connect(search.getPositive(PublishPort.class),
+                        publish.getNegative(PublishPort.class));
+                
                 connect(indexPort, search.getNegative(IndexPort.class));
 		
 		subscribe(handleInit, control);
@@ -86,6 +94,7 @@ public final class SearchPeer extends ComponentDefinition {
 			bootstrapRequestPeerCount = cyclonConfiguration.getBootstrapRequestPeerCount();
 
 			trigger(new CyclonInit(cyclonConfiguration), cyclon.getControl());
+                        trigger(new TManInit(self, init.getTmanConfiguration()), tman.getControl());
 			trigger(new BootstrapClientInit(self, init.getBootstrapConfiguration()), bootstrap.getControl());
 			BootstrapRequest request = new BootstrapRequest("Cyclon", bootstrapRequestPeerCount);
 			trigger(request, bootstrap.getPositive(P2pBootstrap.class));
