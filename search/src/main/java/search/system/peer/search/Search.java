@@ -56,6 +56,8 @@ import se.sics.kompics.web.WebResponse;
 import search.simulator.snapshot.Snapshot;
 import search.system.peer.AddIndexText;
 import search.system.peer.IndexPort;
+import search.system.peer.publish.PublishEvent;
+import search.system.peer.publish.PublishPort;
 import tman.system.peer.tman.TManSample;
 import tman.system.peer.tman.TManPort;
 
@@ -73,6 +75,8 @@ public final class Search extends ComponentDefinition {
     Negative<Web> webPort = negative(Web.class);
     Positive<CyclonSamplePort> cyclonSamplePort = positive(CyclonSamplePort.class);
     Positive<TManPort> tmanPort = positive(TManPort.class);
+    Positive<PublishPort> publishPort = positive(PublishPort.class);
+    
     ArrayList<Address> neighbours = new ArrayList<Address>();
     private Address self;
     private SearchConfiguration searchConfiguration;
@@ -560,19 +564,30 @@ public final class Search extends ComponentDefinition {
             pendingEntries.add(new IndexEntry(-1, event.getText()));
             System.out.println("Node " + self.getId() + " looking up leader");
             tryStartLeaderLookup();
+        }
+    };
+    
+    Handler<PublishEvent.Notify> handlePublishNotify = new Handler<PublishEvent.Notify>() {
+        @Override
+        public void handle(PublishEvent.Notify event) {
+            IndexEntry entry = event.getIndexEntry();
+            updateIndexPointers(entry.getIndexId());
             
-            /*
-            int id = LeaderEmulator.incIndexId();
-            updateIndexPointers(id);
             logger.info(self.getId()
-                    + " - adding index entry: {} Id={}", event.getText(), id);
+                    + " - adding index entry: {} Id={}", entry.getText(), entry.getIndexId());
             try {
-                addEntry(event.getText(), id);
+                addEntry(entry.getText(), entry.getIndexId());
             } catch (IOException ex) {
                 java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
                 throw new IllegalArgumentException(ex.getMessage());
             }
-            */
+        }
+    };
+    
+    Handler<PublishEvent.Failure> handlePublishFailure = new Handler<PublishEvent.Failure>() {
+        @Override
+        public void handle(PublishEvent.Failure event) {
+            logger.info("publish failed");
         }
     };
     
@@ -602,7 +617,7 @@ public final class Search extends ComponentDefinition {
             }
         }
     };
-
+    
     public boolean isLeader() {
         return cyclesOnTop >= requiredCyclesOnTop;
     }
