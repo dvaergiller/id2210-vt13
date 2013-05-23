@@ -3,6 +3,8 @@ package search.system.peer.publish;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
 import se.sics.kompics.Negative;
@@ -19,6 +21,7 @@ import tman.system.peer.tman.TManSample;
  * @author mattija
  */
 public final class Publish extends ComponentDefinition {
+    private static final Logger logger = LoggerFactory.getLogger(Publish.class);    
     private Positive<Network> networkPort = requires(Network.class);
     private Positive<TManPort> tmanPort = requires(TManPort.class);
     private Negative<PublishPort> publishPort = provides(PublishPort.class);
@@ -44,13 +47,6 @@ public final class Publish extends ComponentDefinition {
         subscribe(handleTManSample, tmanPort);
     }
     
-    private void broadcast(Message msg) {
-        for(Address a : tmanPartners) {
-            msg.setDestination(a);
-            trigger(msg, networkPort);
-        }
-    }
-    
     Handler<PublishInit> handleInit = new Handler<PublishInit>() {
         @Override
         public void handle(PublishInit event) {
@@ -74,12 +70,15 @@ public final class Publish extends ComponentDefinition {
                 return;
             }
             
+            logger.info("Node " + self.getId() + " starting publish");
             busy = true;
             numStatesReceived = 0;
             numAcksReceived = 0;
             instanceId = UUID.randomUUID();
-            PublishMsg.CheckState msg = new PublishMsg.CheckState(instanceId, self, null);
-            broadcast(msg);
+            
+            for(Address a : tmanPartners) {
+                trigger(new PublishMsg.CheckState(instanceId, self, a), networkPort);
+            }
         }
     }
     
@@ -113,6 +112,7 @@ public final class Publish extends ComponentDefinition {
     Handler<PublishMsg.CheckState> handleCheckState = new Handler<PublishMsg.CheckState>() {
         @Override
         public void handle(PublishMsg.CheckState event) {
+            logger.info("Node " + self.getId() + " sending own state: " + highestIndexId);
             int lowestPeer = Integer.MAX_VALUE;
             for(Address a : tmanPartners) {
                 if(a.getId() < lowestPeer) {
@@ -161,9 +161,13 @@ public final class Publish extends ComponentDefinition {
             
             numStatesReceived++;
             if(numStatesReceived > tmanPartners.size() / 2) {
-                PublishMsg.Publish publishMsg = 
-                        new PublishMsg.Publish(instanceId, entryQueue.getFirst(), self, null);
-                broadcast(publishMsg);
+                highestIndexId++;
+                entryQueue.getFirst().setIndexId(highestIndexId);
+
+                for(Address a : tmanPartners) {
+                    trigger(new PublishMsg.Publish(instanceId, entryQueue.getFirst(), self, a),
+                            networkPort);
+                }
             }
         }
     };
