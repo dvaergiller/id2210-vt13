@@ -125,6 +125,8 @@ public final class Search extends ComponentDefinition {
         subscribe(handleLeaderLookupResponse, networkPort);
         subscribe(handleLeaderLookupFound, networkPort);
         subscribe(handleAddIndexEntryRequest, networkPort);
+        subscribe(handlePublishNotify, publishPort);
+        subscribe(handlePublishFailure, publishPort);
         subscribe(handleTManSample, tmanPort);
     }
 //-------------------------------------------------------------------	
@@ -477,12 +479,12 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(LeaderLookup.Request event) {
             if(isLeader()) {
-                System.out.println("Node " + self.getId() + " claiming to be leader");
+                logger.info("Node " + self.getId() + " claiming to be leader");
                 LeaderLookup.Found msg = new LeaderLookup.Found(self, event.getSource());
                 trigger(msg, networkPort);
             }
             else {
-                System.out.println("Node " + self.getId() + " is not leader. Sending suggestions");
+                logger.info("Node " + self.getId() + " is not leader. Sending suggestions");
                 ArrayList<Address> suggestions = new ArrayList<Address>();
                 suggestions.add(tmanPartners.get(0));
                 suggestions.add(tmanPartners.get(1));
@@ -510,13 +512,13 @@ public final class Search extends ComponentDefinition {
     Handler<LeaderLookup.Found> handleLeaderLookupFound = new Handler<LeaderLookup.Found>() {
         @Override
         public void handle(LeaderLookup.Found event) {
-            leader = event.getSource();
             leaderLookupRunning = false;
             
-            System.out.println("Node " + self.getId() + " found leader. Adding " + pendingEntries.size() + " entries");
+            logger.info("Node " + self.getId() + " found leader. Adding " + pendingEntries.size() + " entries");
             for(IndexEntry entry : pendingEntries) {
                 UUID requestId = UUID.randomUUID();
-                AddIndexEntry.Request msg = new AddIndexEntry.Request(requestId, self, leader, entry);
+                AddIndexEntry.Request msg =
+                        new AddIndexEntry.Request(requestId, self, event.getSource(), entry);
                 trigger(msg, networkPort);
             }
         }
@@ -525,7 +527,9 @@ public final class Search extends ComponentDefinition {
     Handler<AddIndexEntry.Request> handleAddIndexEntryRequest = new Handler<AddIndexEntry.Request>() {
         @Override
         public void handle(AddIndexEntry.Request event) {
-            System.out.println("Node " + self.getId() + " received add request");
+            logger.info("Node " + self.getId() + " received add request");            
+            PublishEvent.Request request = new PublishEvent.Request(event.getEntry());
+            trigger(request, publishPort);
         }
     };
     
@@ -562,7 +566,7 @@ public final class Search extends ComponentDefinition {
         public void handle(AddIndexText event) {
             
             pendingEntries.add(new IndexEntry(-1, event.getText()));
-            System.out.println("Node " + self.getId() + " looking up leader");
+            logger.info("Node " + self.getId() + " looking up leader");
             tryStartLeaderLookup();
         }
     };
@@ -607,7 +611,7 @@ public final class Search extends ComponentDefinition {
                 cyclesOnTop++;
                 
                 if(isLeader()) {
-                    System.out.println("Node " + self.getId() + " is leader of " 
+                    logger.info("Node " + self.getId() + " is leader of " 
                             + self.getId()%searchConfiguration.getNumPartitions());
                 } 
                 
