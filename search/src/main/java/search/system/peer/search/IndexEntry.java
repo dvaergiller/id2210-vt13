@@ -12,12 +12,16 @@ import java.io.Serializable;
  */
 public class IndexEntry implements Serializable {
     
-    private final int indexId;
+    private int indexId;
     private final String text;
 
     public IndexEntry(int indexId, String text) {
         this.indexId = indexId;
         this.text = text;
+    }
+
+    public void setIndexId(int indexId) {
+        this.indexId = indexId;
     }
 
     public int getIndexId() {
