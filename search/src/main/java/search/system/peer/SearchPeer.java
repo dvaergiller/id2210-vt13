@@ -73,8 +73,8 @@ public final class SearchPeer extends ComponentDefinition {
                         search.getNegative(TManPort.class));
                 connect(tman.getPositive(TManPort.class),
                         publish.getNegative(TManPort.class));
-                connect(search.getPositive(PublishPort.class),
-                        publish.getNegative(PublishPort.class));
+                connect(publish.getPositive(PublishPort.class),
+                        search.getNegative(PublishPort.class));
                 
                 connect(indexPort, search.getNegative(IndexPort.class));
 		
